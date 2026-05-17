@@ -29,7 +29,7 @@ const EVIDENCE_REGISTRY_ABI = [
   "function transferCustody(uint256 evidenceId, address newCustodian) external",
 
   // ── View / Read Functions (free, no gas) ──
-  "function getEvidence(uint256 evidenceId) external view returns (uint256 evidenceId, bytes32 hash, string caseId, string evidenceType, string description, uint256 timestamp, address currentCustodian, bool isRegistered)",
+  "function getEvidence(uint256 evidenceId) external view returns (tuple(uint256 evidenceId, bytes32 hash, string caseId, string evidenceType, string description, uint256 timestamp, address currentCustodian, bool isRegistered))",
   "function getCustodyTrail(uint256 evidenceId) external view returns (address[] memory)",
   "function getCurrentCustodian(uint256 evidenceId) external view returns (address)",
   "function isHashRegistered(bytes32 hash) external view returns (bool)",
@@ -290,7 +290,7 @@ async function registerEvidence() {
     const hashBytes32 = currentHash; // Already 32-byte hex from SHA-256
 
     // Pre-check: warn user if this file was already registered (saves gas)
-    const alreadyExists = await registryContract.isHashRegistered(hashBytes32);
+    const alreadyExists = await registryContract.isHashRegistered(ethers.zeroPadValue(currentHash, 32));
     if (alreadyExists) {
       showTxResult("registerResult", "error", "✗ This file has already been registered on-chain. Each file can only be registered once.");
       showToast("Duplicate file detected!", "error");
@@ -354,18 +354,31 @@ async function verifyIntegrity() {
   result.style.display = "none";
 
   try {
-    // Fetch the stored evidence from blockchain
-    const ev = await registryContract.getEvidence(BigInt(evidenceId));
-    // ev[1] = stored hash (bytes32) — normalize to lowercase, strip 0x for comparison
-    const storedHash = ev[1].toLowerCase().replace("0x", "");
+    // Fetch the stored evidence from blockchain using individual fields
+    // Use evidenceCounter to confirm ID exists first
+    const total = await registryContract.getTotalEvidence();
+    if (BigInt(evidenceId) > total) {
+      return showToast("Evidence ID " + evidenceId + " does not exist.", "error");
+    }
 
-    // currentHash2 is the recomputed hash from the uploaded file — strip 0x too
-    const recomputedHash = currentHash2.toLowerCase().replace("0x", "");
+    // Get stored hash directly via mapping — more reliable than getEvidence struct
+    const ev = await registryContract.getEvidence(BigInt(evidenceId));
+
+    // With tuple ABI, ethers returns named fields — access by name
+    // ev.hash = bytes32 stored hash
+    let storedHash = ev.hash || ev[1];
+    if (typeof storedHash !== "string") {
+      storedHash = ethers.hexlify(storedHash);
+    }
+    storedHash = storedHash.toLowerCase();
+
+    // Convert recomputed hash the EXACT same way as during registration
+    const recomputedHash = ethers.zeroPadValue(currentHash2, 32).toLowerCase();
 
     console.log("Stored hash:     ", storedHash);
     console.log("Recomputed hash: ", recomputedHash);
 
-    // Compare locally — no gas needed, no transaction
+    // Compare — both are now properly padded 32-byte hex strings
     const isVerified = (storedHash === recomputedHash);
 
     result.style.display = "block";
@@ -384,7 +397,8 @@ async function verifyIntegrity() {
     }
 
   } catch (err) {
-    showToast("Verification failed: " + (err.reason || err.message), "error");
+    console.error("Verify error:", err);
+    showToast("Verification failed: " + (err.reason || err.message || "Unknown error"), "error");
   }
 }
 
@@ -402,10 +416,12 @@ async function fetchEvidence() {
     const ev = await registryContract.getEvidence(BigInt(evidenceId));
     // Returns: (evidenceId, hash, caseId, evidenceType, description, timestamp, currentCustodian, isRegistered)
 
-    document.getElementById("ev-caseId").textContent    = ev[2] || "—";  // caseId
-    document.getElementById("ev-type").textContent      = ev[3] || "—";  // evidenceType
-    document.getElementById("ev-custodian").textContent = ev[6] || "—";  // currentCustodian
-    document.getElementById("ev-time").textContent      = ev[5] ? new Date(Number(ev[5]) * 1000).toLocaleString() : "—";  // timestamp
+    // Access by name (tuple) with index fallback
+    document.getElementById("ev-caseId").textContent    = ev.caseId    || ev[2] || "—";
+    document.getElementById("ev-type").textContent      = ev.evidenceType || ev[3] || "—";
+    document.getElementById("ev-custodian").textContent = ev.currentCustodian || ev[6] || "—";
+    document.getElementById("ev-time").textContent      = (ev.timestamp || ev[5])
+      ? new Date(Number(ev.timestamp || ev[5]) * 1000).toLocaleString() : "—";
     document.getElementById("evidenceCard").style.display = "block";
 
     // Also load custody trail
