@@ -1,0 +1,25 @@
+{
+  "name": "ccp",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000C\u0000u\u0000s\u0000t\u0000o\u0000d\u0000y\u0000C\u0000h\u0000a\u0000i\u0000n\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Areeba-Zehra-Jafri/CustodyChain.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Areeba-Zehra-Jafri/CustodyChain/issues"
+  },
+  "homepage": "https://github.com/Areeba-Zehra-Jafri/CustodyChain#readme",
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "ethers": "^6.16.0"
+  }
+}
