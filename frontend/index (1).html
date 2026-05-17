@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ChainCustody — Blockchain Evidence Management</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+  <!-- BACKGROUND GRID -->
+  <div class="bg-grid"></div>
+  <div class="scanline"></div>
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <span class="logo-icon">⬡</span>
+      <div class="logo-text">
+        <span class="logo-title">ChainCustody</span>
+        <span class="logo-sub">Digital Evidence on Blockchain</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="network-badge">
+        <span class="net-dot"></span>
+        <span id="networkName">Sepolia Testnet</span>
+      </div>
+      <button id="connectBtn" class="btn-connect">Connect MetaMask</button>
+    </div>
+  </header>
+
+  <!-- WALLET STATUS BAR -->
+  <div class="status-bar" id="statusBar" style="display:none;">
+    <span class="status-label">CONNECTED WALLET</span>
+    <span id="walletAddress" class="status-address">—</span>
+    <span class="status-label" style="margin-left:auto;">BALANCE</span>
+    <span id="walletBalance" class="status-address">— ETH</span>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <main>
+
+    <!-- NAV TABS -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="register">
+        <span class="tab-icon">⊕</span> Register Evidence
+      </button>
+      <button class="tab-btn" data-tab="verify">
+        <span class="tab-icon">◈</span> Verify Integrity
+      </button>
+      <button class="tab-btn" data-tab="transfer">
+        <span class="tab-icon">⇄</span> Transfer Custody
+      </button>
+      <button class="tab-btn" data-tab="dao">
+        <span class="tab-icon">◉</span> DAO Governance
+      </button>
+    </nav>
+
+    <!-- ══════════════════════════════════════ -->
+    <!-- TAB 1: REGISTER EVIDENCE -->
+    <!-- ══════════════════════════════════════ -->
+    <section class="tab-panel active" id="tab-register">
+      <div class="panel-header">
+        <h2>Register Digital Evidence</h2>
+        <p>Upload a file to generate its SHA-256 hash and register it permanently on the Ethereum blockchain.</p>
+      </div>
+
+      <div class="two-col">
+        <!-- LEFT: Upload -->
+        <div class="card">
+          <div class="card-title">01 — Upload File</div>
+
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-icon">⬡</div>
+            <div class="drop-text">Drag & drop evidence file here</div>
+            <div class="drop-sub">or click to browse</div>
+            <input type="file" id="fileInput" hidden />
+          </div>
+
+          <div class="file-info" id="fileInfo" style="display:none;">
+            <div class="file-row">
+              <span class="file-label">FILENAME</span>
+              <span id="fileName" class="file-val">—</span>
+            </div>
+            <div class="file-row">
+              <span class="file-label">SIZE</span>
+              <span id="fileSize" class="file-val">—</span>
+            </div>
+            <div class="file-row">
+              <span class="file-label">TYPE</span>
+              <span id="fileType" class="file-val">—</span>
+            </div>
+          </div>
+
+          <div class="hash-box" id="hashBox" style="display:none;">
+            <div class="hash-label">SHA-256 HASH</div>
+            <div id="hashOutput" class="hash-value">—</div>
+            <div class="hash-status" id="hashStatus">
+              <span class="spinner" id="hashSpinner" style="display:none;"></span>
+              <span id="hashStatusText">Computing...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Register Form -->
+        <div class="card">
+          <div class="card-title">02 — Register on Chain</div>
+
+          <div class="form-group">
+            <label class="form-label">Case ID</label>
+            <input type="text" id="caseId" class="form-input" placeholder="e.g. CASE-2026-001" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Evidence Type</label>
+            <select id="evidenceType" class="form-input">
+              <option value="">— Select Type —</option>
+              <option value="digital_file">Digital File</option>
+              <option value="image">Image / Photo</option>
+              <option value="video">Video Recording</option>
+              <option value="audio">Audio Recording</option>
+              <option value="document">Document</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea id="evidenceDesc" class="form-input form-textarea" placeholder="Brief description of the evidence..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Computed Hash (auto-filled)</label>
+            <input type="text" id="hashField" class="form-input hash-readonly" readonly placeholder="Upload a file first..." />
+          </div>
+
+          <button class="btn-primary" id="registerBtn" disabled>
+            <span class="btn-icon">⊕</span> Register Evidence
+          </button>
+
+          <div class="tx-result" id="registerResult" style="display:none;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════ -->
+    <!-- TAB 2: VERIFY INTEGRITY -->
+    <!-- ══════════════════════════════════════ -->
+    <section class="tab-panel" id="tab-verify">
+      <div class="panel-header">
+        <h2>Verify Evidence Integrity</h2>
+        <p>Upload the same file again. The system will re-hash it and compare against the on-chain record.</p>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">01 — Upload File to Verify</div>
+
+          <div class="drop-zone" id="dropZone2">
+            <div class="drop-icon">◈</div>
+            <div class="drop-text">Drop the evidence file here</div>
+            <div class="drop-sub">Hash will be recomputed instantly</div>
+            <input type="file" id="fileInput2" hidden />
+          </div>
+
+          <div class="hash-box" id="hashBox2" style="display:none;">
+            <div class="hash-label">RECOMPUTED SHA-256</div>
+            <div id="hashOutput2" class="hash-value">—</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">02 — Check On-Chain Record</div>
+
+          <div class="form-group">
+            <label class="form-label">Evidence ID</label>
+            <input type="number" id="verifyEvidenceId" class="form-input" placeholder="e.g. 1" min="1"/>
+          </div>
+
+          <div class="info-box">
+            <span class="info-icon">ℹ</span>
+            The system will fetch the stored hash from the blockchain and compare it with the recomputed hash of your file.
+          </div>
+
+          <button class="btn-primary" id="verifyBtn">
+            <span class="btn-icon">◈</span> Verify Integrity
+          </button>
+
+          <!-- RESULT CARD -->
+          <div class="verify-result" id="verifyResult" style="display:none;">
+            <div class="verify-icon" id="verifyIcon">?</div>
+            <div class="verify-status" id="verifyStatus">—</div>
+            <div class="verify-detail" id="verifyDetail">—</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════ -->
+    <!-- TAB 3: TRANSFER CUSTODY -->
+    <!-- ══════════════════════════════════════ -->
+    <section class="tab-panel" id="tab-transfer">
+      <div class="panel-header">
+        <h2>Transfer Custody</h2>
+        <p>Transfer the custodianship of a registered evidence item to another authorized wallet address.</p>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">01 — Evidence Details</div>
+
+          <div class="form-group">
+            <label class="form-label">Evidence ID</label>
+            <input type="number" id="transferEvidenceId" class="form-input" placeholder="e.g. 1" min="1"/>
+          </div>
+
+          <button class="btn-secondary" id="fetchEvidenceBtn">
+            <span class="btn-icon">⊡</span> Fetch Evidence Info
+          </button>
+
+          <div class="evidence-card" id="evidenceCard" style="display:none;">
+            <div class="ev-row"><span class="ev-label">CASE ID</span><span class="ev-val" id="ev-caseId">—</span></div>
+            <div class="ev-row"><span class="ev-label">TYPE</span><span class="ev-val" id="ev-type">—</span></div>
+            <div class="ev-row"><span class="ev-label">CURRENT CUSTODIAN</span><span class="ev-val addr" id="ev-custodian">—</span></div>
+            <div class="ev-row"><span class="ev-label">REGISTERED AT</span><span class="ev-val" id="ev-time">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">02 — Transfer to New Custodian</div>
+
+          <div class="form-group">
+            <label class="form-label">New Custodian Wallet Address</label>
+            <input type="text" id="newCustodian" class="form-input" placeholder="0x..." />
+          </div>
+
+          <div class="warn-box">
+            <span class="warn-icon">⚠</span>
+            This action is <strong>irreversible</strong> on the blockchain. Ensure the wallet address is correct before proceeding.
+          </div>
+
+          <button class="btn-primary" id="transferBtn">
+            <span class="btn-icon">⇄</span> Transfer Custody
+          </button>
+
+          <div class="tx-result" id="transferResult" style="display:none;"></div>
+
+          <!-- CUSTODY TRAIL -->
+          <div class="trail-section" id="trailSection" style="display:none;">
+            <div class="card-title" style="margin-top:1.5rem;">Custody Trail</div>
+            <div id="custodyTrail" class="trail-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════ -->
+    <!-- TAB 4: DAO GOVERNANCE -->
+    <!-- ══════════════════════════════════════ -->
+    <section class="tab-panel" id="tab-dao">
+      <div class="panel-header">
+        <h2>DAO Governance</h2>
+        <p>Create proposals for custody disputes, evidence access, or verification requests. NFT holders vote to decide.</p>
+      </div>
+
+      <div class="two-col">
+        <!-- CREATE PROPOSAL -->
+        <div class="card">
+          <div class="card-title">01 — Create Proposal</div>
+
+          <div class="form-group">
+            <label class="form-label">Proposal Description</label>
+            <textarea id="proposalDesc" class="form-input form-textarea" placeholder="Describe the proposal, e.g. Request custody transfer for Evidence #3 due to..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Evidence ID (optional)</label>
+            <input type="number" id="proposalEvidenceId" class="form-input" placeholder="e.g. 1" min="1"/>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Voting Deadline (hours from now)</label>
+            <input type="number" id="votingDeadline" class="form-input" placeholder="e.g. 48" min="1" value="48"/>
+          </div>
+
+          <button class="btn-primary" id="createProposalBtn">
+            <span class="btn-icon">◉</span> Create Proposal
+          </button>
+
+          <div class="tx-result" id="proposalResult" style="display:none;"></div>
+        </div>
+
+        <!-- VOTE ON PROPOSAL -->
+        <div class="card">
+          <div class="card-title">02 — Vote on Proposal</div>
+
+          <div class="form-group">
+            <label class="form-label">Proposal ID</label>
+            <input type="number" id="voteProposalId" class="form-input" placeholder="e.g. 1" min="1"/>
+          </div>
+
+          <button class="btn-secondary" id="fetchProposalBtn">
+            <span class="btn-icon">⊡</span> Fetch Proposal
+          </button>
+
+          <div class="proposal-card" id="proposalCard" style="display:none;">
+            <div class="prop-desc" id="prop-desc">—</div>
+            <div class="prop-meta">
+              <div class="vote-bar-wrap">
+                <div class="vote-bar-label">
+                  <span class="yes-dot">YES</span>
+                  <span id="yesCount">0</span>
+                </div>
+                <div class="vote-bar">
+                  <div class="vote-fill yes-fill" id="yesFill" style="width:0%"></div>
+                </div>
+              </div>
+              <div class="vote-bar-wrap">
+                <div class="vote-bar-label">
+                  <span class="no-dot">NO</span>
+                  <span id="noCount">0</span>
+                </div>
+                <div class="vote-bar">
+                  <div class="vote-fill no-fill" id="noFill" style="width:0%"></div>
+                </div>
+              </div>
+              <div class="prop-status-row">
+                <span class="ev-label">STATUS</span>
+                <span id="propStatus" class="prop-status-badge">—</span>
+              </div>
+            </div>
+
+            <div class="vote-btns">
+              <button class="btn-yes" id="voteYesBtn">✓ Vote YES</button>
+              <button class="btn-no" id="voteNoBtn">✗ Vote NO</button>
+            </div>
+
+            <button class="btn-secondary" id="executeBtn" style="margin-top:0.75rem; width:100%;">
+              ⚡ Execute Verdict
+            </button>
+          </div>
+
+          <div class="tx-result" id="voteResult" style="display:none;"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Ethers.js v6 — Web3 library -->
+  <script src="ethers.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
