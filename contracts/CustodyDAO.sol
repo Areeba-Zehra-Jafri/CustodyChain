@@ -1,44 +1,93 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-//  Purpose:
-//  Governance contract that allows wallet holders to:
-//  - Create proposals
-//  - Vote yes or no
-//  - Execute approved proposals
+// Import EvidenceRegistry so DAO can call burnEvidence()
+import "./EvidenceRegistry.sol";
+
+/**
+ * @title CustodyDAO
+ * @dev Governance contract for ChainCustody
+ *
+ * FEATURES:
+ *  - Create proposals
+ *  - Vote YES / NO
+ *  - Execute proposals
+ *  - DAO-controlled evidence burning
+ *
+ * FLOW:
+ *  1. User creates burn proposal
+ *  2. Users vote
+ *  3. Proposal passes quorum
+ *  4. DAO calls EvidenceRegistry.burnEvidence()
+ *  5. NFT gets burned
+ */
 
 contract CustodyDAO {
 
-    // OWNER
+    // ─────────────────────────────────────────────────────────────
+    // STATE VARIABLES
+    // ─────────────────────────────────────────────────────────────
+
+    /// Contract owner/admin
     address public owner;
 
-    // PROPOSAL STRUCTURE
-    struct Proposal {
-        uint proposalId;          // unique ID
-        string description;       // what the proposal is about
-        address proposer;         // who created it
-        uint deadline;            // voting closes at this timestamp
-        uint yesVotes;            // count of yes votes
-        uint noVotes;             // count of no votes
-        bool executed;            // has it been executed yet
-    }
-
-    // STORAGE
-
-    // stores all proposals by their ID
-    mapping(uint => Proposal) public proposals;
-
-    // tracks whether an address has voted on a specific proposal
-    // mapping(proposalId => mapping(walletAddress => hasVoted))
-    mapping(uint => mapping(address => bool)) public hasVoted;
-
-    // total number of proposals created so far
-    uint public proposalCount;
-
-    // minimum yes votes needed to execute a proposal (quorum)
+    /// Minimum YES votes required
     uint public quorum;
 
+    /// Total proposal count
+    uint public proposalCount;
+
+    /// EvidenceRegistry contract reference
+    EvidenceRegistry public evidenceRegistry;
+
+    // ─────────────────────────────────────────────────────────────
+    // PROPOSAL STRUCTURE
+    // ─────────────────────────────────────────────────────────────
+
+    struct Proposal {
+
+        // Proposal ID
+        uint proposalId;
+
+        // Human-readable proposal description
+        string description;
+
+        // Who created the proposal
+        address proposer;
+
+        // Voting deadline timestamp
+        uint deadline;
+
+        // YES votes
+        uint yesVotes;
+
+        // NO votes
+        uint noVotes;
+
+        // Has proposal been executed?
+        bool executed;
+
+        // Evidence ID to burn
+        uint evidenceId;
+
+        // Is this a burn proposal?
+        bool burnProposal;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // STORAGE
+    // ─────────────────────────────────────────────────────────────
+
+    /// proposalId => Proposal
+    mapping(uint => Proposal) public proposals;
+
+    /// proposalId => voter => voted?
+    mapping(uint => mapping(address => bool)) public hasVoted;
+
+    // ─────────────────────────────────────────────────────────────
     // EVENTS
+    // ─────────────────────────────────────────────────────────────
+
     event ProposalCreated(
         uint indexed proposalId,
         address indexed proposer,
@@ -49,132 +98,259 @@ contract CustodyDAO {
     event Voted(
         uint indexed proposalId,
         address indexed voter,
-        bool support         // true = yes, false = no
+        bool support
     );
 
     event ProposalExecuted(
         uint indexed proposalId,
-        bool passed          // true if yes votes won
+        bool passed
     );
 
+    event EvidenceBurnExecuted(
+        uint indexed proposalId,
+        uint indexed evidenceId
+    );
+
+    // ─────────────────────────────────────────────────────────────
     // MODIFIERS
+    // ─────────────────────────────────────────────────────────────
 
-    // only the contract deployer can do certain things
     modifier onlyOwner() {
-        require(msg.sender == owner, "Not the contract owner");
+
+        require(
+            msg.sender == owner,
+            "Not contract owner"
+        );
+
         _;
     }
 
-    // proposal must exist
     modifier validProposal(uint _proposalId) {
-        require(_proposalId > 0 && _proposalId <= proposalCount, "Proposal does not exist");
+
+        require(
+            _proposalId > 0 &&
+            _proposalId <= proposalCount,
+            "Proposal does not exist"
+        );
+
         _;
     }
 
-    // voting must still be open (deadline not passed)
     modifier votingOpen(uint _proposalId) {
-        require(block.timestamp < proposals[_proposalId].deadline, "Voting period has ended");
+
+        require(
+            block.timestamp < proposals[_proposalId].deadline,
+            "Voting period ended"
+        );
+
         _;
     }
 
-    // voting must be closed before execution
     modifier votingClosed(uint _proposalId) {
-        require(block.timestamp >= proposals[_proposalId].deadline, "Voting is still open");
+
+        require(
+            block.timestamp >= proposals[_proposalId].deadline,
+            "Voting still active"
+        );
+
         _;
     }
 
+    // ─────────────────────────────────────────────────────────────
     // CONSTRUCTOR
-    // Called once when contract is deployed
-    constructor(uint _quorum) {
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @param _quorum Minimum YES votes required
+     * @param _registryAddress Address of EvidenceRegistry
+     */
+    constructor(
+        uint _quorum,
+        address _registryAddress
+    ) {
+
+        require(
+            _registryAddress != address(0),
+            "Invalid registry address"
+        );
+
         owner = msg.sender;
+
         quorum = _quorum;
+
+        evidenceRegistry = EvidenceRegistry(_registryAddress);
     }
 
-    // FUNCTION 1 — CREATE PROPOSAL
-    // Anyone can create a proposal
-    // _description : what the proposal is about
-    // _durationInMinutes : how long voting stays open
+    // ─────────────────────────────────────────────────────────────
+    // CREATE BURN PROPOSAL
+    // ─────────────────────────────────────────────────────────────
 
-    function createProposal(string memory _description, uint _durationInMinutes) public returns (uint) {
+    /**
+     * @dev Create proposal to burn evidence NFT
+     *
+     * @param _description Proposal text
+     * @param _durationInMinutes Voting duration
+     * @param _evidenceId Evidence to burn
+     */
+    function createBurnProposal(
+        string memory _description,
+        uint _durationInMinutes,
+        uint _evidenceId
+    )
+        public
+        returns (uint)
+    {
 
-        // basic validation
-        require(bytes(_description).length > 0, "Description cannot be empty");
-        require(_durationInMinutes > 0, "Duration must be greater than zero");
+        require(
+            bytes(_description).length > 0,
+            "Description empty"
+        );
 
-        // increment counter to get a new unique ID
+        require(
+            _durationInMinutes > 0,
+            "Duration must be > 0"
+        );
+
         proposalCount++;
 
-        // calculate when voting closes
-        uint deadline = block.timestamp + (_durationInMinutes * 1 minutes);
+        uint deadline =
+            block.timestamp +
+            (_durationInMinutes * 1 minutes);
 
-        // create and store the proposal
         proposals[proposalCount] = Proposal({
-            proposalId:  proposalCount,
+
+            proposalId: proposalCount,
+
             description: _description,
-            proposer:    msg.sender,
-            deadline:    deadline,
-            yesVotes:    0,
-            noVotes:     0,
-            executed:    false
+
+            proposer: msg.sender,
+
+            deadline: deadline,
+
+            yesVotes: 0,
+
+            noVotes: 0,
+
+            executed: false,
+
+            evidenceId: _evidenceId,
+
+            burnProposal: true
         });
 
-        // emit event for frontend
-        emit ProposalCreated(proposalCount, msg.sender, _description, deadline);
+        emit ProposalCreated(
+            proposalCount,
+            msg.sender,
+            _description,
+            deadline
+        );
 
         return proposalCount;
     }
 
-    // FUNCTION 2 — VOTE
-    // Any wallet can vote yes or no on a proposal
-    // _proposalId : which proposal to vote on
-    // _support    : true = yes, false = no
+    // ─────────────────────────────────────────────────────────────
+    // VOTE
+    // ─────────────────────────────────────────────────────────────
 
-    function vote( uint _proposalId, bool _support) public validProposal(_proposalId) votingOpen(_proposalId)
+    /**
+     * @param _proposalId Proposal ID
+     * @param _support true = YES, false = NO
+     */
+    function vote(
+        uint _proposalId,
+        bool _support
+    )
+        public
+        validProposal(_proposalId)
+        votingOpen(_proposalId)
     {
-        // prevent double voting
-        require(!hasVoted[_proposalId][msg.sender], "You have already voted on this proposal");
 
-        // mark this wallet as having voted
+        require(
+            !hasVoted[_proposalId][msg.sender],
+            "Already voted"
+        );
+
         hasVoted[_proposalId][msg.sender] = true;
 
-        // add to the correct vote count
         if (_support) {
+
             proposals[_proposalId].yesVotes++;
+
         } else {
+
             proposals[_proposalId].noVotes++;
         }
 
-        // emit event
-        emit Voted(_proposalId, msg.sender, _support);
+        emit Voted(
+            _proposalId,
+            msg.sender,
+            _support
+        );
     }
 
-    // FUNCTION 3 — EXECUTE PROPOSAL
-    // Can only be called after voting deadline has passed
-    // Checks quorum and yes/no result
+    // ─────────────────────────────────────────────────────────────
+    // EXECUTE PROPOSAL
+    // ─────────────────────────────────────────────────────────────
 
-    function executeProposal(uint _proposalId ) public validProposal(_proposalId) votingClosed(_proposalId)
+    /**
+     * @dev Executes approved proposal
+     *
+     * IF proposal passes:
+     *   DAO calls:
+     *   registry.burnEvidence()
+     */
+    function executeProposal(
+        uint _proposalId
+    )
+        public
+        validProposal(_proposalId)
+        votingClosed(_proposalId)
     {
-        Proposal storage proposal = proposals[_proposalId];
 
-        // cannot execute twice
-        require(!proposal.executed, "Proposal already executed");
+        Proposal storage proposal =
+            proposals[_proposalId];
 
-        // mark as executed regardless of result
+        require(
+            !proposal.executed,
+            "Already executed"
+        );
+
         proposal.executed = true;
 
-        // check if quorum was reached and yes votes won
-        bool passed = (proposal.yesVotes >= quorum) &&
-                      (proposal.yesVotes > proposal.noVotes);
+        bool passed =
+            (proposal.yesVotes >= quorum) &&
+            (proposal.yesVotes > proposal.noVotes);
 
-        // emit result
-        emit ProposalExecuted(_proposalId, passed);
+        // If passed AND burn proposal
+        if (
+            passed &&
+            proposal.burnProposal
+        ) {
+
+            // DAO calls registry burn
+            evidenceRegistry.burnEvidence(
+                proposal.evidenceId
+            );
+
+            emit EvidenceBurnExecuted(
+                _proposalId,
+                proposal.evidenceId
+            );
+        }
+
+        emit ProposalExecuted(
+            _proposalId,
+            passed
+        );
     }
 
+    // ─────────────────────────────────────────────────────────────
     // VIEW FUNCTIONS
-    // These are free to call (no gas) — used by frontend
+    // ─────────────────────────────────────────────────────────────
 
-    // get full details of a proposal
-    function getProposal(uint _proposalId)
+    function getProposal(
+        uint _proposalId
+    )
         public
         view
         validProposal(_proposalId)
@@ -185,10 +361,15 @@ contract CustodyDAO {
             uint deadline,
             uint yesVotes,
             uint noVotes,
-            bool executed
+            bool executed,
+            uint evidenceId,
+            bool burnProposal
         )
     {
-        Proposal storage p = proposals[_proposalId];
+
+        Proposal storage p =
+            proposals[_proposalId];
+
         return (
             p.proposalId,
             p.description,
@@ -196,46 +377,76 @@ contract CustodyDAO {
             p.deadline,
             p.yesVotes,
             p.noVotes,
-            p.executed
+            p.executed,
+            p.evidenceId,
+            p.burnProposal
         );
     }
 
-    // check if a specific wallet has voted on a proposal
-    function checkIfVoted(uint _proposalId, address _voter)
+    function checkIfVoted(
+        uint _proposalId,
+        address _voter
+    )
         public
         view
         returns (bool)
     {
+
         return hasVoted[_proposalId][_voter];
     }
 
-    // get current vote counts for a proposal
-    function getVoteCounts(uint _proposalId)
+    function getVoteCounts(
+        uint _proposalId
+    )
         public
         view
         validProposal(_proposalId)
-        returns (uint yes, uint no)
+        returns (
+            uint yes,
+            uint no
+        )
     {
+
         return (
             proposals[_proposalId].yesVotes,
             proposals[_proposalId].noVotes
         );
     }
 
-    // check if voting is still active
-    function isVotingActive(uint _proposalId)
+    function isVotingActive(
+        uint _proposalId
+    )
         public
         view
         validProposal(_proposalId)
         returns (bool)
     {
-        return block.timestamp < proposals[_proposalId].deadline;
+
+        return (
+            block.timestamp <
+            proposals[_proposalId].deadline
+        );
     }
 
-    // ADMIN — update quorum (only owner)
+    // ─────────────────────────────────────────────────────────────
+    // ADMIN
+    // ─────────────────────────────────────────────────────────────
 
-    function updateQuorum(uint _newQuorum) public onlyOwner {
-        require(_newQuorum > 0, "Quorum must be greater than zero");
+    /**
+     * @dev Update quorum
+     */
+    function updateQuorum(
+        uint _newQuorum
+    )
+        public
+        onlyOwner
+    {
+
+        require(
+            _newQuorum > 0,
+            "Quorum must be > 0"
+        );
+
         quorum = _newQuorum;
     }
 }
